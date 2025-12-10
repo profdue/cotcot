@@ -1,5 +1,6 @@
 """
 REAL BACKTESTER using actual USD/ZAR prices
+FIXED VERSION: Handles None data properly
 """
 
 import pandas as pd
@@ -12,228 +13,292 @@ class Backtester:
     def __init__(self, cot_data, price_data=None):
         """
         Initialize with COT data AND USD/ZAR price data
-        cot_data: COT weekly reports
-        price_data: Daily USD/ZAR prices
         """
-        self.cot_data = cot_data.copy()
-        self.price_data = price_data
+        self.cot_data = cot_data.copy() if cot_data is not None else None
+        self.price_data = price_data.copy() if price_data is not None else None
         
-        # Convert date columns
         if self.price_data is not None and 'date' in self.price_data.columns:
             self.price_data = self.price_data.sort_values('date')
         
         self.results = {}
     
-    def load_price_data(self, filepath="data/usd_zar_historical_data.csv"):
+    def load_price_data_from_file(self, filepath="data/usd_zar_historical_data.csv"):
         """
-        Load USD/ZAR historical prices with robust error handling
-        Handles quoted CSV with BOM encoding
+        Load USD/ZAR historical prices directly from file
+        Returns DataFrame if successful, None otherwise
         """
         try:
-            # Read the file to inspect first few lines
+            # First, read the raw file to see format
             with open(filepath, 'r', encoding='utf-8-sig') as f:
-                sample = f.read(1000)
+                content = f.read(5000)
+                lines = content.split('\n')
                 
-            # Check if file has BOM and quoted fields
-            lines = sample.split('\n')
+            # Try different reading methods
+            price_df = None
             
-            # Try reading with pandas - handle quoted CSV
+            # Method 1: Standard CSV with quotes (your format)
             try:
-                df = pd.read_csv(
+                price_df = pd.read_csv(
                     filepath,
                     encoding='utf-8-sig',
                     quotechar='"',
                     thousands=',',
                     engine='python'
                 )
-            except:
-                # Try without quotechar
-                df = pd.read_csv(
-                    filepath,
-                    encoding='utf-8-sig',
-                    thousands=','
-                )
+                print(f"Method 1 successful. Columns: {price_df.columns.tolist()}")
+            except Exception as e1:
+                print(f"Method 1 failed: {str(e1)[:100]}")
+                
+                # Method 2: Try without engine specification
+                try:
+                    price_df = pd.read_csv(
+                        filepath,
+                        encoding='utf-8-sig',
+                        quotechar='"',
+                        thousands=','
+                    )
+                    print(f"Method 2 successful. Columns: {price_df.columns.tolist()}")
+                except Exception as e2:
+                    print(f"Method 2 failed: {str(e2)[:100]}")
+                    
+                    # Method 3: Manual parsing
+                    try:
+                        price_df = self._manual_csv_parse(filepath)
+                        print(f"Method 3 (manual) successful")
+                    except Exception as e3:
+                        print(f"All methods failed: {str(e3)[:100]}")
+                        return None
+            
+            if price_df is None or len(price_df) == 0:
+                return None
             
             # Clean column names
-            df.columns = df.columns.str.strip()
+            price_df.columns = price_df.columns.str.strip()
+            price_df.columns = price_df.columns.str.replace(r'[^\x00-\x7F]+', '', regex=True)
             
-            # Find date column (case insensitive)
-            date_col = None
-            for col in df.columns:
-                if 'date' in col.lower():
-                    date_col = col
-                    break
+            # Find and process date column
+            date_col = self._find_date_column(price_df)
             if date_col is None:
-                date_col = df.columns[0]  # Assume first column
+                print("Could not find date column")
+                return None
             
-            # Find price column
-            price_col = None
-            for col in df.columns:
-                if 'price' in col.lower() and col != date_col:
-                    price_col = col
-                    break
+            price_df['date'] = pd.to_datetime(price_df[date_col], dayfirst=True, errors='coerce')
+            
+            # Find and process price column
+            price_col = self._find_price_column(price_df, date_col)
             if price_col is None:
-                # Check other common names
-                for col in df.columns:
-                    if any(x in col.lower() for x in ['close', 'last', 'value']):
-                        price_col = col
-                        break
-            if price_col is None:
-                price_col = df.columns[1]  # Assume second column
+                print("Could not find price column")
+                return None
             
-            # Convert and clean
-            df['date'] = pd.to_datetime(df[date_col], dayfirst=True, errors='coerce')
-            
-            # Clean price - remove commas and convert to float
-            if df[price_col].dtype == 'object':
-                df['price'] = pd.to_numeric(
-                    df[price_col].astype(str).str.replace(',', ''), 
+            # Convert price to numeric
+            if price_df[price_col].dtype == 'object':
+                price_df['price'] = pd.to_numeric(
+                    price_df[price_col].astype(str).str.replace(',', ''), 
                     errors='coerce'
                 )
             else:
-                df['price'] = df[price_col]
+                price_df['price'] = price_df[price_col]
             
-            # Remove invalid rows
-            df = df.dropna(subset=['date', 'price'])
-            df = df.sort_values('date')
+            # Clean up
+            price_df = price_df.dropna(subset=['date', 'price'])
+            price_df = price_df.sort_values('date')
             
-            # Keep relevant columns
+            # Keep only essential columns
             keep_cols = ['date', 'price']
-            for col in ['Open', 'High', 'Low', 'Vol.', 'Change %']:
-                if col in df.columns:
-                    df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce')
-                    keep_cols.append(col)
+            for col in ['Open', 'High', 'Low', 'Vol.', 'Change %', 'Change']:
+                if col in price_df.columns:
+                    try:
+                        price_df[col] = pd.to_numeric(
+                            price_df[col].astype(str).str.replace(',', ''), 
+                            errors='coerce'
+                        )
+                        keep_cols.append(col)
+                    except:
+                        pass
             
-            self.price_data = df[keep_cols]
-            return True
+            result_df = price_df[keep_cols].copy()
+            print(f"Successfully loaded {len(result_df)} price records")
+            print(f"Date range: {result_df['date'].min()} to {result_df['date'].max()}")
+            
+            return result_df
             
         except Exception as e:
-            print(f"Error loading price data: {str(e)}")
-            # Fallback: try manual parsing
-            return self._load_price_data_manual(filepath)
+            print(f"Error in load_price_data_from_file: {str(e)}")
+            return None
     
-    def _load_price_data_manual(self, filepath):
+    def _manual_csv_parse(self, filepath):
         """Manual CSV parsing as fallback"""
-        try:
-            dates = []
-            prices = []
+        dates = []
+        prices = []
+        
+        with open(filepath, 'r', encoding='utf-8-sig') as f:
+            reader = csv.reader(f)
             
-            with open(filepath, 'r', encoding='utf-8-sig') as f:
-                reader = csv.reader(f)
-                # Skip header
-                next(reader)
+            # Skip header
+            try:
+                header = next(reader)
+                print(f"CSV Header: {header}")
+            except:
+                header = []
+            
+            for row_num, row in enumerate(reader, 1):
+                if len(row) < 2:
+                    continue
                 
-                for row in reader:
-                    if len(row) < 2:
-                        continue
+                try:
+                    # Clean and parse
+                    date_str = row[0].strip().strip('"\'')
+                    price_str = row[1].strip().strip('"\'').replace(',', '')
                     
-                    try:
-                        # Clean the date (remove quotes, trim)
-                        date_str = row[0].strip().strip('"')
-                        # Clean the price (remove quotes, commas)
-                        price_str = row[1].strip().strip('"').replace(',', '')
-                        
-                        date = pd.to_datetime(date_str, dayfirst=True)
-                        price = float(price_str)
-                        
+                    # Try different date formats
+                    date = None
+                    for fmt in ['%d/%m/%Y', '%d-%m-%Y', '%Y-%m-%d', '%m/%d/%Y']:
+                        try:
+                            date = pd.to_datetime(date_str, format=fmt)
+                            break
+                        except:
+                            continue
+                    
+                    if date is None:
+                        # Last resort: let pandas guess
+                        date = pd.to_datetime(date_str, dayfirst=True, errors='coerce')
+                    
+                    price = float(price_str)
+                    
+                    if pd.notna(date):
                         dates.append(date)
                         prices.append(price)
-                    except:
-                        continue
-            
-            if dates:
-                df = pd.DataFrame({'date': dates, 'price': prices})
-                df = df.dropna()
-                df = df.sort_values('date')
-                self.price_data = df
-                return True
-            
-            return False
-            
-        except Exception as e:
-            print(f"Manual loading also failed: {e}")
-            return False
+                        
+                except Exception as e:
+                    if row_num <= 5:  # Only show errors for first few rows
+                        print(f"Row {row_num} error: {str(e)[:50]}")
+                    continue
+        
+        if dates:
+            df = pd.DataFrame({'date': dates, 'price': prices})
+            df = df.dropna()
+            return df
+        
+        return None
+    
+    def _find_date_column(self, df):
+        """Find date column in dataframe"""
+        for col in df.columns:
+            col_lower = col.lower()
+            if any(x in col_lower for x in ['date', 'time', 'day', 'timestamp']):
+                return col
+        
+        # Check first column if it looks like dates
+        first_col = df.columns[0]
+        sample = df[first_col].dropna().iloc[0] if len(df) > 0 else ''
+        if isinstance(sample, str) and any(x in sample for x in ['/', '-', '202', '201']):
+            return first_col
+        
+        return None
+    
+    def _find_price_column(self, df, exclude_col):
+        """Find price column in dataframe"""
+        for col in df.columns:
+            if col == exclude_col:
+                continue
+            col_lower = col.lower()
+            if any(x in col_lower for x in ['price', 'close', 'last', 'value', 'rate']):
+                return col
+        
+        # Check second column
+        if len(df.columns) > 1 and df.columns[1] != exclude_col:
+            return df.columns[1]
+        
+        return None
+    
+    def set_price_data(self, price_data):
+        """Set price data after initialization"""
+        if price_data is not None:
+            self.price_data = price_data.copy()
+            if 'date' in self.price_data.columns:
+                self.price_data = self.price_data.sort_values('date')
+            return True
+        return False
     
     def align_cot_with_prices(self):
         """
         Align COT signals with price data
-        COT is released Tuesday (for previous Tuesday)
-        We'll assume entry on Wednesday, exit next Tuesday
+        Returns None if data is missing or alignment fails
         """
         if self.price_data is None or self.cot_data is None:
+            print("Missing data for alignment")
             return None
         
-        cot_df = self.cot_data.copy()
-        price_df = self.price_data.copy()
-        
-        # Ensure we have datetime
-        cot_df['cot_date'] = pd.to_datetime(cot_df['cot_date'])
-        price_df['date'] = pd.to_datetime(price_df['date'])
-        
-        # Create aligned dataframe
-        aligned_data = []
-        
-        for i in range(len(cot_df) - 1):  # Skip last one (no future price)
-            cot_date = cot_df.iloc[i]['cot_date']
-            cot_net = cot_df.iloc[i]['commercial_net']
+        try:
+            cot_df = self.cot_data.copy()
+            price_df = self.price_data.copy()
             
-            # Find price on or after COT date (entry price)
-            price_after_cot = price_df[price_df['date'] >= cot_date]
-            if len(price_after_cot) == 0:
-                continue
-                
-            entry_price_data = price_after_cot.iloc[0]
-            entry_price = entry_price_data['price']
-            entry_date = entry_price_data['date']
+            # Ensure we have datetime
+            cot_df['cot_date'] = pd.to_datetime(cot_df['cot_date'])
+            price_df['date'] = pd.to_datetime(price_df['date'])
             
-            # Find price 7 days later (next week)
-            exit_date_target = cot_date + timedelta(days=7)
-            price_on_exit = price_df[price_df['date'] >= exit_date_target]
+            # Create aligned dataframe
+            aligned_data = []
             
-            if len(price_on_exit) > 0:
-                exit_price_data = price_on_exit.iloc[0]
-                exit_price = exit_price_data['price']
-                exit_date = exit_price_data['date']
+            for i in range(len(cot_df) - 1):  # Skip last one
+                cot_date = cot_df.iloc[i]['cot_date']
+                cot_net = cot_df.iloc[i]['commercial_net']
                 
-                # Calculate return
-                price_change = exit_price - entry_price
-                pips = price_change * 1000  # USD/ZAR: 1 pip = 0.001
-                pct_return = (exit_price - entry_price) / entry_price * 100
+                # Find entry price (next trading day after COT)
+                price_after_cot = price_df[price_df['date'] > cot_date]
+                if len(price_after_cot) == 0:
+                    continue
                 
-                # Calculate holding days
-                holding_days = (exit_date - entry_date).days
+                entry_price_data = price_after_cot.iloc[0]
+                entry_price = entry_price_data['price']
+                entry_date = entry_price_data['date']
                 
-                aligned_data.append({
-                    'cot_date': cot_date,
-                    'entry_date': entry_date,
-                    'exit_date': exit_date,
-                    'holding_days': holding_days,
-                    'entry_price': entry_price,
-                    'exit_price': exit_price,
-                    'commercial_net': cot_net,
-                    'pips': pips,
-                    'pct_return': pct_return,
-                    'price_change': price_change
-                })
-        
-        if not aligned_data:
+                # Find exit price (7 days later)
+                exit_date_target = cot_date + timedelta(days=7)
+                price_on_exit = price_df[price_df['date'] >= exit_date_target]
+                
+                if len(price_on_exit) > 0:
+                    exit_price_data = price_on_exit.iloc[0]
+                    exit_price = exit_price_data['price']
+                    exit_date = exit_price_data['date']
+                    
+                    # Calculate returns
+                    price_change = exit_price - entry_price
+                    pips = price_change * 1000  # USD/ZAR: 1 pip = 0.001
+                    pct_return = (exit_price - entry_price) / entry_price * 100
+                    
+                    aligned_data.append({
+                        'cot_date': cot_date,
+                        'entry_date': entry_date,
+                        'exit_date': exit_date,
+                        'entry_price': entry_price,
+                        'exit_price': exit_price,
+                        'commercial_net': cot_net,
+                        'pips': pips,
+                        'pct_return': pct_return,
+                        'price_change': price_change
+                    })
+            
+            if not aligned_data:
+                print("No data aligned")
+                return None
+            
+            aligned_df = pd.DataFrame(aligned_data)
+            print(f"Successfully aligned {len(aligned_df)} trades")
+            return aligned_df
+            
+        except Exception as e:
+            print(f"Error in align_cot_with_prices: {str(e)}")
             return None
-            
-        aligned_df = pd.DataFrame(aligned_data)
-        
-        # Filter out trades with abnormal holding periods (should be ~5-7 days)
-        aligned_df = aligned_df[(aligned_df['holding_days'] >= 4) & (aligned_df['holding_days'] <= 10)]
-        
-        return aligned_df
     
     def backtest_threshold(self, threshold=-50000, capital=10000, risk_per_trade=0.01):
         """
         Backtest strategy: BUY when commercial_net < threshold
-        Hold for 1 week
         """
         aligned_df = self.align_cot_with_prices()
         
         if aligned_df is None or len(aligned_df) == 0:
+            print(f"No aligned data for threshold {threshold}")
             return None
         
         # Create signals
@@ -243,7 +308,10 @@ class Backtester:
         trades_df = aligned_df[aligned_df['signal'] == 1].copy()
         
         if len(trades_df) == 0:
+            print(f"No signals for threshold {threshold}")
             return None
+        
+        print(f"Found {len(trades_df)} trades for threshold {threshold}")
         
         # Apply trading costs (3 pip spread for USD/ZAR)
         spread_pips = 3
@@ -265,6 +333,10 @@ class Backtester:
     
     def analyze_thresholds(self):
         """Test different threshold values with REAL data"""
+        if self.price_data is None or self.cot_data is None:
+            print("Missing data for threshold analysis")
+            return pd.DataFrame()
+        
         thresholds = [-70000, -60000, -50000, -40000, -30000, -20000, -10000]
         
         analysis = []
@@ -323,10 +395,10 @@ class Backtester:
         drawdown = (equity - peak) / peak
         max_drawdown = drawdown.min() * 100
         
-        # Sharpe ratio (annualized)
+        # Sharpe ratio
         returns = trades_df['pct_return'] / 100
-        if len(returns) > 1:
-            sharpe = (returns.mean() / returns.std()) * np.sqrt(52)  # Weekly to annual
+        if len(returns) > 1 and returns.std() > 0:
+            sharpe = (returns.mean() / returns.std()) * np.sqrt(52)
         else:
             sharpe = 0
         
@@ -360,13 +432,10 @@ class Backtester:
         # Monthly breakdown
         stats['monthly'] = monthly.to_dict('records')
         
-        # Trade-by-trade data for charts
-        stats['trades_data'] = trades_df[['entry_date', 'net_pips', 'pct_return', 'equity']].to_dict('records')
-        
         return stats
     
     def generate_report(self):
-        """Generate comprehensive backtest report with REAL data"""
+        """Generate comprehensive backtest report"""
         if self.cot_data is None or len(self.cot_data) == 0:
             return {"error": "No COT data available"}
         
@@ -394,19 +463,18 @@ class Backtester:
         if len(threshold_df) > 0:
             report['threshold_analysis'] = threshold_df.to_dict('records')
             
-            # 3. Find best threshold based on profit factor
+            # Find best threshold
             if 'profit_factor' in threshold_df.columns:
-                # Filter for reasonable number of trades
                 valid_thresholds = threshold_df[threshold_df['trades'] >= 10]
                 if len(valid_thresholds) > 0:
                     best_idx = valid_thresholds['profit_factor'].idxmax()
                     report['best_threshold'] = valid_thresholds.loc[best_idx].to_dict()
                     
-                    # 4. Detailed stats for best threshold
+                    # Detailed stats
                     best_threshold = report['best_threshold']['threshold']
                     report['detailed_stats'] = self.get_strategy_stats(best_threshold)
         
-        # 5. Signal distribution
+        # 3. Signal distribution
         self.cot_data['signal_strength'] = pd.cut(
             self.cot_data['commercial_net'],
             bins=[-200000, -60000, -40000, -20000, 0, 20000, 40000, 200000],
@@ -416,14 +484,5 @@ class Backtester:
         
         signal_dist = self.cot_data['signal_strength'].value_counts().sort_index().to_dict()
         report['signal_distribution'] = signal_dist
-        
-        # 6. Data quality info
-        aligned_df = self.align_cot_with_prices()
-        if aligned_df is not None:
-            report['alignment_info'] = {
-                'aligned_trades': len(aligned_df),
-                'avg_holding_days': round(aligned_df['holding_days'].mean(), 1),
-                'successful_alignment_pct': round(len(aligned_df) / len(self.cot_data) * 100, 1)
-            }
         
         return report
