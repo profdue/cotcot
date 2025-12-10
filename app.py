@@ -126,7 +126,7 @@ with tab1:
         try:
             # Get list of CSV files in data folder
             data_files = []
-            for year in [2020, 2021, 2022, 2023, 2024]:
+            for year in [2020, 2021, 2022, 2023, 2024, 2025]:
                 file_path = f"data/{year}_COT.csv"
                 if os.path.exists(file_path):
                     data_files.append(file_path)
