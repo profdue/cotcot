@@ -1,84 +1,62 @@
 Week,Date,Gold_Net,Silver_Net,DXY_Net,EUR_Net,Gold_4wk_Avg,Signal_Strength,Confirmation_Score,Decision,Position_Size,Entry_Price,Exit_Price,P/L,Status,Notes
-1,2025-11-04,-59451,-22607,17352,-392441,-59451,Moderate USD BULLISH,3/3,NORMAL BUY USD,1.0x,,,,Pending,Week 1: All confirmations aligned
+1,2025-11-04,-59451,-22607,17352,-392441,-59451,MODERATE USD BULLISH,3/3,NORMAL BUY USD,1.0x,,,0,Pending,Week 1: All confirmations aligned
 2,2025-11-11,,,,,,,,,,,,,,Data releases Nov 14 @ 3:30 PM ET
 3,2025-11-18,,,,,,,,,,,,,,Data releases Nov 21 @ 3:30 PM ET
-4,2025-11-25,,,,,,,,,,,,FINAL,Data releases Nov 28 @ 3:30 PM ET
+4,2025-11-25,,,,,,,,,,,,FINAL,,Data releases Nov 28 @ 3:30 PM ET
 ,,,,,,,,,,,,,,,
 ,,,,,,,,,,,,,,,
-,,Excel Formulas (Copy into corresponding columns),,,,,,,,,,,,
-Column,Cell,Formula,Explanation
-Gold_4wk_Avg,G2,=IF(COUNT($C$2:C2)>=4, AVERAGE(OFFSET(C2, -3, 0, 4, 1)), C2),Calculates 4-week moving average
-Signal_Strength,H2,=IF(C2<-70000, "STRONG USD BULLISH", IF(C2<-50000, "MODERATE USD BULLISH", IF(C2<-30000, "NEUTRAL", IF(C2<-10000, "MODERATE USD BEARISH", "STRONG USD BEARISH")))),Classifies based on corrected thresholds
-Confirmation_Score,I2,=COUNTIF(D2,"<-20000") + COUNTIF(E2,">0") + COUNTIF(F2,"<-100000") & "/3",Counts confirmations (Silver, DXY, EUR)
-Decision,J2,=IF(H2="STRONG USD BULLISH", IF(VALUE(LEFT(I2,1))>=2, "FULL BUY USD", IF(VALUE(LEFT(I2,1))=1, "HALF BUY USD", "NO TRADE")), IF(H2="MODERATE USD BULLISH", IF(VALUE(LEFT(I2,1))>=2, "NORMAL BUY USD", IF(VALUE(LEFT(I2,1))=1, "HALF BUY USD", "NO TRADE")), IF(H2="NEUTRAL", "NO TRADE", IF(H2="MODERATE USD BEARISH", IF(VALUE(LEFT(I2,1))>=2, "NORMAL SELL USD", "NO TRADE"), IF(H2="STRONG USD BEARISH", IF(VALUE(LEFT(I2,1))>=2, "FULL SELL USD", "NO TRADE"), "NO TRADE")))),Automated decision based on signal & confirmations
-Position_Size,K2,=IF(J2="FULL BUY USD", "2.0x", IF(J2="NORMAL BUY USD", "1.0x", IF(J2="HALF BUY USD", "0.5x", IF(J2="NORMAL SELL USD", "1.0x", IF(J2="FULL SELL USD", "2.0x", "0x")))),Converts decision to position size
 ,,,,,,,,,,,,,,,
+Gold_Thresholds,Signal,Range,Interpretation,,,,,,,,,,
+Gold_Thresholds,STRONG USD BULLISH,"< -70,000",Extremely bearish gold = Very bullish USD,,,,,,,,,,
+Gold_Thresholds,MODERATE USD BULLISH,"-70,000 to -50,000",Bearish gold = Bullish USD,,,,,,,,,,
+Gold_Thresholds,NEUTRAL,"-50,000 to -30,000",Uncertain/no clear signal,,,,,,,,,,
+Gold_Thresholds,MODERATE USD BEARISH,"-30,000 to -10,000",Bullish gold = Bearish USD,,,,,,,,,,
+Gold_Thresholds,STRONG USD BEARISH,"> -10,000",Very bullish gold = Very bearish USD,,,,,,,,,,
 ,,,,,,,,,,,,,,,
-,Corrected Gold Signal Thresholds (Commercial Net = Negative),,,,,,,,,,,,
-Signal,Gold Commercial Net Range,Interpretation
-STRONG USD BULLISH,< -70,000,Extremely bearish gold = Very bullish USD
-MODERATE USD BULLISH,-70,000 to -50,000,Bearish gold = Bullish USD
-NEUTRAL,-50,000 to -30,000,Uncertain/no clear signal
-MODERATE USD BEARISH,-30,000 to -10,000,Bullish gold = Bearish USD
-STRONG USD BEARISH,> -10,000,Very bullish gold = Very bearish USD
+Confirmation_Thresholds,Signal,Threshold,Interpretation,,,,,,,,,,
+Confirmation_Thresholds,Silver Commercial Net,"< -20,000",Bearish silver confirms USD bullish,,,,,,,,,,
+Confirmation_Thresholds,DXY Dealer Net,"> 0",Bullish USD Index confirms,,,,,,,,,,
+Confirmation_Thresholds,EUR Dealer Net,"< -100,000",Bearish Euro confirms USD bullish,,,,,,,,,,
 ,,,,,,,,,,,,,,,
-,Confirmation Thresholds,,,,,,,,,,,,
-Signal,Threshold,Interpretation
-Silver Commercial Net,< -20,000,Bearish silver confirms USD bullish
-DXY Dealer Net,> 0,Bullish USD Index confirms
-EUR Dealer Net,< -100,000,Bearish Euro confirms USD bullish
+Decision_Matrix,Gold_Signal,Required_Confirmations,Action,Position_Size,Risk_Level,,,,,,,,,
+Decision_Matrix,STRONG USD BULLISH,2/3,FULL BUY USD,2.0x,High,,,,,,,,,
+Decision_Matrix,STRONG USD BULLISH,1/3,HALF BUY USD,0.5x,Low,,,,,,,,,
+Decision_Matrix,MODERATE USD BULLISH,2/3,NORMAL BUY USD,1.0x,Medium,,,,,,,,,
+Decision_Matrix,MODERATE USD BULLISH,1/3,HALF BUY USD,0.5x,Low,,,,,,,,,
+Decision_Matrix,NEUTRAL,Any,NO TRADE,0x,None,,,,,,,,,
+Decision_Matrix,MODERATE USD BEARISH,2/3,NORMAL SELL USD,1.0x,Medium,,,,,,,,,
+Decision_Matrix,STRONG USD BEARISH,2/3,FULL SELL USD,2.0x,High,,,,,,,,,
 ,,,,,,,,,,,,,,,
-,Decision Matrix (Minimum Requirements),,,,,,,,,,,,
-Gold Signal,Required Confirmations,Action,Position Size,Risk Level
-STRONG USD BULLISH,2/3,FULL BUY USD,2.0x,High
-STRONG USD BULLISH,1/3,HALF BUY USD,0.5x,Low
-MODERATE USD BULLISH,2/3,NORMAL BUY USD,1.0x,Medium
-MODERATE USD BULLISH,1/3,HALF BUY USD,0.5x,Low
-NEUTRAL,Any,NO TRADE,0x,None
-MODERATE USD BEARISH,2/3,NORMAL SELL USD,1.0x,Medium
-STRONG USD BEARISH,2/3,FULL SELL USD,2.0x,High
+Risk_Management,Account_Size,10000,USD,,,,,,,,,,
+Risk_Management,Risk_Per_Trade,1.00%,,,,,,,,,,,
+Risk_Management,Maximum_Drawdown,20%,,,,,,,,,,,
 ,,,,,,,,,,,,,,,
-,Risk Management Section,,,,,,,,,,,,
-Account Size:,10000,USD,,,,,,,,,
-Risk Per Trade:,1.00%,,,,,,,,,,
-Maximum Drawdown:,20%,,,,,,,,,,
-,Position Calculator (For USD/ZAR Trading),,,,,,,,,,,
-Decision,Pips Risked,Lot Size,USD Risk,Stop Loss %,Notes
-FULL BUY USD (2.0x),300,0.20,200,2.0%,Double normal position
-NORMAL BUY USD (1.0x),300,0.10,100,1.0%,Standard position
-HALF BUY USD (0.5x),300,0.05,50,0.5%,Conservative position
-NORMAL SELL USD (1.0x),300,0.10,100,1.0%,Standard short position
-FULL SELL USD (2.0x),300,0.20,200,2.0%,Double normal short
-,Formula: Lot Size = (Account * Risk%) / (Pips Risked * Pip Value),,,,,,,,,,,
+Position_Calculator,Decision,Pips_Risked,Lot_Size,USD_Risk,Stop_Loss_Percent,Notes,,,,,,,,
+Position_Calculator,FULL BUY USD (2.0x),300,0.20,200,2.0%,Double normal position,,,,,,,,
+Position_Calculator,NORMAL BUY USD (1.0x),300,0.10,100,1.0%,Standard position,,,,,,,,
+Position_Calculator,HALF BUY USD (0.5x),300,0.05,50,0.5%,Conservative position,,,,,,,,
+Position_Calculator,NORMAL SELL USD (1.0x),300,0.10,100,1.0%,Standard short position,,,,,,,,
+Position_Calculator,FULL SELL USD (2.0x),300,0.20,200,2.0%,Double normal short,,,,,,,,
 ,,,,,,,,,,,,,,,
-,Weekly Data Collection Guide,,,,,,,,,,,,
-Step,File,Section,Look For,Calculation,Interpretation
-1,Metals File,Gold (Code: 088691),Producer/Merchant Short & Long,Short - Long,Negative = Bullish USD
-2,Metals File,Silver (Code: 084691),Producer/Merchant Short & Long,Short - Long,Negative = Bullish USD
-3,Financials File,USD Index (Code: 098662),Dealer Long & Short,Long - Short,Positive = Bullish USD
-4,Financials File,Euro FX (Code: 099741),Dealer Long & Short,Long - Short,Negative = Bullish USD
+Weekly_Guide,Step,File,Section,Look_For,Calculation,Interpretation,,,,,,,,
+Weekly_Guide,1,Metals File,Gold (Code: 088691),Producer/Merchant Short & Long,Short - Long,Negative = Bullish USD,,,,,,,,
+Weekly_Guide,2,Metals File,Silver (Code: 084691),Producer/Merchant Short & Long,Short - Long,Negative = Bullish USD,,,,,,,,
+Weekly_Guide,3,Financials File,USD Index (Code: 098662),Dealer Long & Short,Long - Short,Positive = Bullish USD,,,,,,,,
+Weekly_Guide,4,Financials File,Euro FX (Code: 099741),Dealer Long & Short,Long - Short,Negative = Bullish USD,,,,,,,,
 ,,,,,,,,,,,,,,,
-,November 2025 Trading Calendar,,,,,,,,,,,,
-Date,Day,Event,Action Required,Deadline
-Nov 4,Tuesday,Week 1 COT Data,ANALYSIS COMPLETE: Moderate Buy USD,Complete
-Nov 14,Friday,Week 2 COT Data @ 3:30 PM ET,Download & Update Spreadsheet,4:00 PM ET
-Nov 21,Friday,Week 3 COT Data @ 3:30 PM ET,Download & Update - 3-week average,4:00 PM ET
-Nov 28,Friday,Week 4 COT Data @ 3:30 PM ET,FINAL DECISION: Enter December Position,4:00 PM ET
-Nov 28,Friday,December Position Entry,Execute trade based on final analysis,Market Close
+Calendar,Date,Day,Event,Action_Required,Deadline,,,,,,,,,
+Calendar,Nov 4,Tuesday,Week 1 COT Data,ANALYSIS COMPLETE: Moderate Buy USD,Complete,,,,,,,,,
+Calendar,Nov 14,Friday,Week 2 COT Data @ 3:30 PM ET,Download & Update Spreadsheet,4:00 PM ET,,,,,,,,,
+Calendar,Nov 21,Friday,Week 3 COT Data @ 3:30 PM ET,Download & Update - 3-week average,4:00 PM ET,,,,,,,,,
+Calendar,Nov 28,Friday,Week 4 COT Data @ 3:30 PM ET,FINAL DECISION: Enter December Position,4:00 PM ET,,,,,,,,,
+Calendar,Nov 28,Friday,December Position Entry,Execute trade based on final analysis,Market Close,,,,,,,,,
 ,,,,,,,,,,,,,,,
-,December 2025 Position Tracking,,,,,,,,,,,,
-Instrument,Entry Date,Entry Price,Position Size,Stop Loss,Take Profit,Exit Date,Exit Price,P/L %,P/L USD,Status
-USD/ZAR,2025-11-28,TBD,1.0x,TBD,TBD,2025-12-26,TBD,TBD,TBD,Pending
+Position_Tracking,Instrument,Entry_Date,Entry_Price,Position_Size,Stop_Loss,Take_Profit,Exit_Date,Exit_Price,P/L_Percent,P/L_USD,Status,,,
+Position_Tracking,USD/ZAR,2025-11-28,TBD,1.0x,TBD,TBD,2025-12-26,TBD,0,0,Pending,,,
 ,,,,,,,,,,,,,,,
-,Monthly Performance Summary,,,,,,,,,,,,
-Month,Signal,Entry Date,Exit Date,Days Held,P/L%,Account Growth,Cumulative P/L%
-December 2025,NORMAL BUY USD,2025-11-28,2025-12-26,28,,,
-January 2026,,,,,,,
-February 2026,,,,,,,
-March 2026,,,,,,,
-,Quarterly Total,,,,,,,,
-,,,,,,,,,,,,,,,
-,Trade Journal Notes,,,,,,,,,,,,
-Date,Event,Action,Reason,Result
-2025-11-04,Initial Analysis,Setup tracking system,Strong alignment across 4 indicators,N/A
-2025-11-28,December Entry,Execute USD/ZAR buy,4-week average confirms Moderate Buy USD signal,TBD
+Performance,Month,Signal,Entry_Date,Exit_Date,Days_Held,P/L_Percent,Account_Growth,Cumulative_P/L,,,,,,
+Performance,December 2025,NORMAL BUY USD,2025-11-28,2025-12-26,28,0,0,0,,,,,,
+Performance,January 2026,,,,,,0,,,,,,
+Performance,February 2026,,,,,,0,,,,,,
+Performance,March 2026,,,,,,0,,,,,,
+Performance,Quarterly_Total,,,,,,0,,,,,,
