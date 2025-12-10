@@ -56,7 +56,6 @@ with tab1:
     with col2:
         if st.button("💹 Load USD/ZAR Prices", type="secondary", use_container_width=True):
             with st.spinner("Loading..."):
-                # Simple price loader
                 try:
                     df = pd.read_csv(
                         "data/usd_zar_historical_data.csv",
@@ -89,9 +88,9 @@ with tab1:
             st.metric("Max Commercial Net", f"{df['commercial_net'].max():,.0f}")
             st.metric("Current", f"{df['commercial_net'].iloc[-1]:,.0f}")
         
-        # Commercial net distribution
-        fig = px.histogram(df, x='commercial_net', nbins=30, 
-                          title="Commercial Net Position Distribution")
+        # Commercial net chart
+        fig = px.line(df, x='cot_date', y='commercial_net', 
+                     title="Commercial Net Position Over Time")
         st.plotly_chart(fig, use_container_width=True)
     
     if st.session_state.price_data is not None:
@@ -339,7 +338,7 @@ with tab3:
                     st.plotly_chart(fig3, use_container_width=True)
 
 # ============================================
-# TAB 4: Optimization
+# TAB 4: Optimization (FIXED VERSION)
 # ============================================
 with tab4:
     st.header("⚡ Strategy Optimization")
@@ -356,33 +355,69 @@ with tab4:
         - **Profit factor > 1.2** suggests edge exists
         """)
         
-        # Analysis of commercial positioning
+        # Analysis of commercial positioning - FIXED VERSION
         st.subheader("📊 Commercial Positioning Analysis")
         
-        # Calculate signal frequency at different levels
-        bins = [-200000, -60000, -40000, -30000, -20000, -10000, 0, 10000, 200000]
-        labels = ['Extreme Short (<-60k)', 'Very Short (-60k to -40k)', 'Short (-40k to -30k)', 
-                 'Moderate Short (-30k to -20k)', 'Mild Short (-20k to -10k)', 
-                 'Very Mild Short (-10k to 0)', 'Neutral/Long (>0)']
+        # FIXED: Correct number of bins and labels
+        bins = [-200000, -60000, -40000, -30000, -20000, -10000, 0]
+        labels = [
+            'Extreme Short (<-60k)', 
+            'Very Short (-60k to -40k)', 
+            'Short (-40k to -30k)', 
+            'Moderate Short (-30k to -20k)', 
+            'Mild Short (-20k to -10k)', 
+            'Very Mild Short (-10k to 0)'
+        ]
         
-        df['position_category'] = pd.cut(df['commercial_net'], bins=bins, labels=labels)
-        
-        category_counts = df['position_category'].value_counts().sort_index()
-        category_pct = (category_counts / len(df) * 100).round(1)
-        
-        # Display frequency table
-        freq_df = pd.DataFrame({
-            'Position Category': category_counts.index,
-            'Weeks': category_counts.values,
-            'Percentage': category_pct.values
-        })
-        
-        st.dataframe(freq_df, use_container_width=True)
-        
-        # Visualize
-        fig = px.bar(freq_df, x='Percentage', y='Position Category', 
-                     orientation='h', title='How Often Each Position Occurs')
-        st.plotly_chart(fig, use_container_width=True)
+        # Check if all data fits in bins
+        if df['commercial_net'].min() >= bins[0] and df['commercial_net'].max() <= bins[-1]:
+            df['position_category'] = pd.cut(df['commercial_net'], bins=bins, labels=labels)
+            
+            category_counts = df['position_category'].value_counts().sort_index()
+            category_pct = (category_counts / len(df) * 100).round(1)
+            
+            # Display frequency table
+            freq_df = pd.DataFrame({
+                'Position Category': category_counts.index,
+                'Weeks': category_counts.values,
+                'Percentage': category_pct.values
+            })
+            
+            st.dataframe(freq_df, use_container_width=True)
+            
+            # Visualize
+            fig = px.bar(freq_df, x='Percentage', y='Position Category', 
+                         orientation='h', title='How Often Each Position Occurs')
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("Data outside bin range. Using simplified categorization.")
+            
+            # Simplified approach
+            def categorize_position(net):
+                if net < -60000:
+                    return "Extreme Short (<-60k)"
+                elif net < -40000:
+                    return "Very Short (-60k to -40k)"
+                elif net < -30000:
+                    return "Short (-40k to -30k)"
+                elif net < -20000:
+                    return "Moderate Short (-30k to -20k)"
+                elif net < -10000:
+                    return "Mild Short (-20k to -10k)"
+                else:
+                    return "Very Mild Short (-10k to 0)"
+            
+            df['position_category'] = df['commercial_net'].apply(categorize_position)
+            category_counts = df['position_category'].value_counts()
+            category_pct = (category_counts / len(df) * 100).round(1)
+            
+            freq_df = pd.DataFrame({
+                'Position Category': category_counts.index,
+                'Weeks': category_counts.values,
+                'Percentage': category_pct.values
+            })
+            
+            st.dataframe(freq_df, use_container_width=True)
         
         # Risk Management Suggestions
         st.subheader("🛡️ Risk Management Recommendations")
@@ -403,50 +438,108 @@ with tab4:
             st.write("• Consider monthly instead of weekly trades")
             st.write("• Combine with other indicators")
         
-        # Modified strategy backtest
-        st.subheader("🔄 Test Modified Strategy")
+        # Performance summary
+        st.subheader("📈 Your Strategy Performance Summary")
         
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            new_threshold = st.selectbox(
-                "Threshold",
-                [-30000, -40000, -50000],
-                index=0
-            )
-        
-        with col2:
-            risk_per_trade = st.select_slider(
-                "Risk per Trade",
-                options=[0.25, 0.5, 1.0, 1.5, 2.0],
-                value=0.5,
-                format_func=lambda x: f"{x}%"
-            )
-        
-        with col3:
-            stop_loss = st.select_slider(
-                "Stop Loss (pips)",
-                options=[25, 50, 75, 100, 150],
-                value=100
-            )
-        
-        if st.button("🔧 Test Modified Strategy", type="primary"):
-            st.info(f"""
-            **Testing Modified Strategy:**
-            - Threshold: {new_threshold:,}
-            - Risk per Trade: {risk_per_trade}%
-            - Stop Loss: {stop_loss} pips
+        if 'current_stats' in st.session_state:
+            stats = st.session_state.current_stats
+            threshold = st.session_state.current_threshold
             
-            **Expected Improvements:**
-            • Lower drawdown
-            • Better risk-adjusted returns
-            • More sustainable strategy
-            """)
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("Strategy Performance", 
+                         f"{stats['roi_pct']}% ROI",
+                         f"{stats['profit_factor']:.2f} PF")
+            
+            with col2:
+                st.metric("Risk Metrics",
+                         f"{stats['max_drawdown_pct']}% Max DD",
+                         f"{stats['sharpe_ratio']:.2f} Sharpe")
+            
+            with col3:
+                st.metric("Trade Statistics",
+                         f"{stats['total_trades']} Trades",
+                         f"{stats['win_rate']}% Win Rate")
+            
+            # Strategy assessment
+            st.subheader("📋 Strategy Assessment")
+            
+            assessment = []
+            
+            # Profit Factor assessment
+            if stats['profit_factor'] > 1.5:
+                assessment.append(("✅ Profit Factor", "Excellent (>1.5)"))
+            elif stats['profit_factor'] > 1.2:
+                assessment.append(("✅ Profit Factor", "Good (1.2-1.5)"))
+            else:
+                assessment.append(("⚠️ Profit Factor", "Needs improvement (<1.2)"))
+            
+            # Drawdown assessment
+            if stats['max_drawdown_pct'] > -20:
+                assessment.append(("✅ Max Drawdown", "Good (<20%)"))
+            elif stats['max_drawdown_pct'] > -40:
+                assessment.append(("⚠️ Max Drawdown", "Acceptable (20-40%)"))
+            else:
+                assessment.append(("❌ Max Drawdown", "Risky (>40%) - NEEDS FIX"))
+            
+            # Win Rate assessment
+            if stats['win_rate'] > 55:
+                assessment.append(("✅ Win Rate", "Excellent (>55%)"))
+            elif stats['win_rate'] > 50:
+                assessment.append(("✅ Win Rate", "Good (50-55%)"))
+            else:
+                assessment.append(("⚠️ Win Rate", "Acceptable (<50%)"))
+            
+            # Sharpe Ratio assessment
+            if stats['sharpe_ratio'] > 1.0:
+                assessment.append(("✅ Sharpe Ratio", "Excellent (>1.0)"))
+            elif stats['sharpe_ratio'] > 0.5:
+                assessment.append(("✅ Sharpe Ratio", "Good (0.5-1.0)"))
+            else:
+                assessment.append(("⚠️ Sharpe Ratio", "Needs improvement (<0.5)"))
+            
+            # Display assessment
+            for label, value in assessment:
+                st.write(f"{label}: {value}")
+            
+            # Overall recommendation
+            st.subheader("🎯 Final Recommendation")
+            
+            if stats['profit_factor'] > 1.2 and stats['max_drawdown_pct'] > -40:
+                st.success("""
+                **✅ STRATEGY IS PROMISING!**
+                
+                **Next Steps:**
+                1. Implement risk management (0.5% risk, 100-pip stops)
+                2. Paper trade for 3 months
+                3. Consider combining with trend filter
+                """)
+            elif stats['profit_factor'] > 1.0:
+                st.warning("""
+                **⚠️ STRATEGY NEEDS IMPROVEMENT**
+                
+                **Issues to fix:**
+                1. High drawdown is dangerous
+                2. Reduce position size significantly
+                3. Add stop-losses
+                4. Consider different entry timing
+                """)
+            else:
+                st.error("""
+                **❌ STRATEGY NOT VIABLE**
+                
+                **Consider:**
+                1. Different threshold values
+                2. Alternative entry signals
+                3. Different currency pair
+                4. Longer holding periods
+                """)
 
 # Footer
 st.divider()
 st.caption("""
-**COT Strategy Analyzer v2.0** | Data: 2020-2025 | 
+**COT Strategy Analyzer v2.1** | Data: 2020-2025 | 
 **Key Finding:** Optimal threshold = -30,000 (Commercial Net) | 
 **Warning:** High drawdown requires risk management
 """)
