@@ -19,38 +19,23 @@ class Backtester:
     
     def load_price_data(self, filepath="data/usd_zar_historical_data.csv"):
         """
-        Load USD/ZAR historical prices - SIMPLIFIED VERSION
+        Load USD/ZAR historical prices - FIXED for DD/MM/YYYY dates
         """
         try:
-            # Method 1: Direct pandas read with proper parameters
-            try:
-                df = pd.read_csv(
-                    filepath,
-                    encoding='utf-8-sig',
-                    quotechar='"',
-                    thousands=',',
-                    engine='python'
-                )
-            except Exception as e1:
-                # Method 2: Try without quotechar
-                try:
-                    df = pd.read_csv(
-                        filepath,
-                        encoding='utf-8-sig',
-                        thousands=','
-                    )
-                except Exception as e2:
-                    # Method 3: Try manual parsing
-                    df = self._manual_csv_parse(filepath)
-                    if df is None:
-                        raise Exception(f"Failed to read CSV: {e1}, {e2}")
+            print(f"Loading price data from {filepath}...")
             
-            # Debug: Show what we got
-            print(f"Loaded columns: {df.columns.tolist()}")
-            print(f"First few rows:\n{df.head()}")
+            # Method 1: Read with pandas, handle DD/MM/YYYY
+            df = pd.read_csv(
+                filepath,
+                encoding='utf-8-sig',
+                quotechar='"',
+                thousands=',',
+                engine='python'
+            )
             
             # Clean column names
             df.columns = [col.strip().replace('"', '') for col in df.columns]
+            print(f"Columns found: {df.columns.tolist()}")
             
             # Find date column
             date_col = None
@@ -59,13 +44,7 @@ class Backtester:
                     date_col = col
                     break
             if date_col is None:
-                # Try common column names
-                for col in df.columns:
-                    if any(x in col.lower() for x in ['date', 'time', 'day']):
-                        date_col = col
-                        break
-            if date_col is None:
-                date_col = df.columns[0]
+                date_col = 'Date' if 'Date' in df.columns else df.columns[0]
             
             # Find price column
             price_col = None
@@ -74,17 +53,34 @@ class Backtester:
                     price_col = col
                     break
             if price_col is None:
-                for col in df.columns:
-                    if any(x in col.lower() for x in ['price', 'close', 'last', 'value']):
-                        price_col = col
-                        break
-            if price_col is None:
-                price_col = df.columns[1] if len(df.columns) > 1 else df.columns[0]
+                price_col = 'Price' if 'Price' in df.columns else df.columns[1]
             
-            print(f"Using date column: {date_col}, price column: {price_col}")
+            print(f"Using date column: '{date_col}', price column: '{price_col}'")
             
-            # Convert date
-            df['date'] = pd.to_datetime(df[date_col], dayfirst=True, errors='coerce')
+            # CRITICAL FIX: Parse DD/MM/YYYY dates properly
+            def parse_date(date_str):
+                try:
+                    # Remove any quotes and whitespace
+                    date_str = str(date_str).strip().strip('"')
+                    # Split by /
+                    parts = date_str.split('/')
+                    if len(parts) == 3:
+                        day, month, year = parts
+                        # Handle 2-digit year
+                        if len(year) == 2:
+                            year = '20' + year if int(year) < 50 else '19' + year
+                        return pd.Timestamp(f"{year}-{month}-{day}")
+                except:
+                    pass
+                return pd.NaT
+            
+            # Apply custom date parser
+            df['date'] = df[date_col].apply(parse_date)
+            
+            # Alternative: try pandas parser with dayfirst=True
+            if df['date'].isna().all():
+                print("Custom parser failed, trying pandas with dayfirst=True...")
+                df['date'] = pd.to_datetime(df[date_col], dayfirst=True, errors='coerce')
             
             # Convert price
             if df[price_col].dtype == 'object':
@@ -96,21 +92,15 @@ class Backtester:
                 df['price'] = df[price_col]
             
             # Remove invalid rows
+            initial_count = len(df)
             df = df.dropna(subset=['date', 'price'])
             df = df.sort_values('date')
             
-            # Keep only essential columns
-            keep_cols = ['date', 'price']
-            for col in ['Open', 'High', 'Low', 'Vol.', 'Change %', 'Vol']:
-                if col in df.columns:
-                    try:
-                        df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce')
-                        keep_cols.append(col)
-                    except:
-                        pass
+            print(f"Loaded {len(df)} valid records (dropped {initial_count - len(df)} invalid)")
+            print(f"Date range: {df['date'].min()} to {df['date'].max()}")
+            print(f"Price range: {df['price'].min():.4f} to {df['price'].max():.4f}")
             
-            self.price_data = df[keep_cols]
-            print(f"Successfully loaded {len(self.price_data)} price records")
+            self.price_data = df[['date', 'price']]
             return True
             
         except Exception as e:
@@ -118,55 +108,6 @@ class Backtester:
             import traceback
             traceback.print_exc()
             return False
-    
-    def _manual_csv_parse(self, filepath):
-        """Manual CSV parsing as fallback"""
-        try:
-            data = []
-            with open(filepath, 'r', encoding='utf-8-sig') as f:
-                content = f.read()
-                lines = content.split('\n')
-                
-                # Extract header
-                if lines:
-                    header_line = lines[0].strip()
-                    # Remove quotes and split
-                    headers = [h.strip('"') for h in header_line.split(',')]
-                    
-                    # Parse data rows
-                    for line in lines[1:]:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        
-                        # Remove quotes and split
-                        values = []
-                        in_quotes = False
-                        current_value = []
-                        
-                        for char in line:
-                            if char == '"':
-                                in_quotes = not in_quotes
-                            elif char == ',' and not in_quotes:
-                                values.append(''.join(current_value).strip('"'))
-                                current_value = []
-                            else:
-                                current_value.append(char)
-                        
-                        if current_value:
-                            values.append(''.join(current_value).strip('"'))
-                        
-                        if len(values) >= 2:
-                            data.append(values)
-            
-            if data and headers:
-                df = pd.DataFrame(data, columns=headers[:len(data[0])])
-                return df
-            
-        except Exception as e:
-            print(f"Manual parsing failed: {e}")
-        
-        return None
     
     def align_cot_with_prices(self):
         """
@@ -179,6 +120,9 @@ class Backtester:
         try:
             cot_df = self.cot_data.copy()
             price_df = self.price_data.copy()
+            
+            print(f"COT date range: {cot_df['cot_date'].min()} to {cot_df['cot_date'].max()}")
+            print(f"Price date range: {price_df['date'].min()} to {price_df['date'].max()}")
             
             # Ensure datetime
             cot_df['cot_date'] = pd.to_datetime(cot_df['cot_date'])
@@ -203,7 +147,8 @@ class Backtester:
                 entry_date = entry_row['date']
                 entry_price = entry_row['price']
                 
-                # Find exit price (1 week later)
+                # Find exit price (approximately 1 week later)
+                # Look for price 5-7 business days later
                 exit_date_target = cot_date + timedelta(days=7)
                 exit_mask = price_df['date'] >= exit_date_target
                 
@@ -234,18 +179,14 @@ class Backtester:
                 })
             
             if not aligned_data:
-                print("No data aligned")
+                print("No data aligned - check date ranges")
                 return None
             
             aligned_df = pd.DataFrame(aligned_data)
             
-            # Filter reasonable holding periods
-            aligned_df = aligned_df[
-                (aligned_df['holding_days'] >= 4) & 
-                (aligned_df['holding_days'] <= 10)
-            ]
+            print(f"Successfully aligned {len(aligned_df)} trades")
+            print(f"Average holding days: {aligned_df['holding_days'].mean():.1f}")
             
-            print(f"Aligned {len(aligned_df)} trades")
             return aligned_df
             
         except Exception as e:
@@ -261,7 +202,7 @@ class Backtester:
         aligned_df = self.align_cot_with_prices()
         
         if aligned_df is None or len(aligned_df) == 0:
-            print(f"No aligned data for threshold {threshold}")
+            print(f"No aligned data for backtesting")
             return None
         
         # Create signals
@@ -273,6 +214,8 @@ class Backtester:
         if len(trades_df) == 0:
             print(f"No signals for threshold {threshold}")
             return None
+        
+        print(f"Found {len(trades_df)} trades for threshold {threshold}")
         
         # Apply trading costs
         spread_pips = 3
@@ -288,7 +231,6 @@ class Backtester:
         trades_df['equity'] = capital + trades_df['cumulative_profit']
         trades_df['win'] = trades_df['net_pips'] > 0
         
-        print(f"Backtest complete: {len(trades_df)} trades for threshold {threshold}")
         return trades_df
     
     def analyze_thresholds(self):
@@ -389,59 +331,3 @@ class Backtester:
         stats['monthly'] = monthly.to_dict('records')
         
         return stats
-    
-    def generate_report(self):
-        """Generate comprehensive backtest report"""
-        if self.cot_data is None or len(self.cot_data) == 0:
-            return {"error": "No COT data available"}
-        
-        if self.price_data is None or len(self.price_data) == 0:
-            return {"error": "No price data available"}
-        
-        report = {}
-        
-        try:
-            # Data overview
-            report['data_overview'] = {
-                'total_cot_weeks': len(self.cot_data),
-                'total_price_days': len(self.price_data),
-                'cot_date_range': f"{self.cot_data['cot_date'].min().date()} to {self.cot_data['cot_date'].max().date()}",
-                'price_date_range': f"{self.price_data['date'].min().date()} to {self.price_data['date'].max().date()}",
-                'avg_commercial_net': round(self.cot_data['commercial_net'].mean(), 0),
-                'min_commercial_net': int(self.cot_data['commercial_net'].min()),
-                'max_commercial_net': int(self.cot_data['commercial_net'].max()),
-                'avg_usdzar_price': round(self.price_data['price'].mean(), 4),
-                'current_usdzar': round(self.price_data['price'].iloc[-1], 4)
-            }
-            
-            # Threshold analysis
-            threshold_df = self.analyze_thresholds()
-            if len(threshold_df) > 0:
-                report['threshold_analysis'] = threshold_df.to_dict('records')
-                
-                # Find best threshold
-                if 'profit_factor' in threshold_df.columns:
-                    valid_df = threshold_df[threshold_df['trades'] >= 10]
-                    if len(valid_df) > 0:
-                        best_idx = valid_df['profit_factor'].idxmax()
-                        report['best_threshold'] = valid_df.loc[best_idx].to_dict()
-                        
-                        # Detailed stats
-                        best_threshold = report['best_threshold']['threshold']
-                        report['detailed_stats'] = self.get_strategy_stats(best_threshold)
-            
-            # Signal distribution
-            self.cot_data['signal_strength'] = pd.cut(
-                self.cot_data['commercial_net'],
-                bins=[-200000, -60000, -40000, -20000, 0, 20000, 40000, 200000],
-                labels=['Extreme Short', 'Strong Short', 'Moderate Short', 'Mild Short',
-                       'Mild Long', 'Moderate Long', 'Strong Long']
-            )
-            
-            signal_dist = self.cot_data['signal_strength'].value_counts().sort_index().to_dict()
-            report['signal_distribution'] = signal_dist
-            
-        except Exception as e:
-            report['error'] = f"Error generating report: {str(e)}"
-        
-        return report
