@@ -10,52 +10,126 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
 # Import custom modules
 try:
     from cot_analyzer import COTAnalyzer
-    from trade_calculator import TradeCalculator
 except ImportError:
-    # Create dummy classes
+    # Simple fallback
     class COTAnalyzer:
         def __init__(self, data_paths): pass
         def get_latest_signal(self): 
+            return self._get_sample_signal()
+        def _get_sample_signal(self):
             return {
-                'report_date': 'Latest Report',
+                'report_date': 'Nov 04, 2025',
+                'commercial_long': 9805,
+                'commercial_short': 69256,
+                'net_commercial': -59451,
+                'gold_signal': 'BEARISH GOLD',
                 'usdzar_bias': 'BULLISH USD/ZAR',
-                'signal_strength': 'STRONG',
-                'net_commercial': -59451
+                'signal_strength': 'STRONG'
             }
-    
-    class TradeCalculator:
-        def __init__(self, account_balance=150, risk_percent=0.5): 
-            self.account_balance = account_balance
-            self.risk_percent = risk_percent
 
 # Page configuration
 st.set_page_config(
-    page_title="COT Limit Order Dashboard",
+    page_title="COT Limit Order Trader",
     page_icon="🎯",
     layout="wide"
 )
 
 # App title
-st.title("🎯 COT Limit Order Dashboard")
+st.title("🎯 COT Limit Order Trader")
 st.markdown("**Set & Forget Trading for $150 Accounts**")
 
 # Initialize session state
-if 'trade_plan' not in st.session_state:
-    st.session_state.trade_plan = None
-if 'orders_set' not in st.session_state:
-    st.session_state.orders_set = False
+if 'latest_signal' not in st.session_state:
+    st.session_state.latest_signal = None
 
-# Sidebar
-with st.sidebar:
-    st.header("⚙️ Account Settings")
+# Main content - SINGLE DASHBOARD (No Tabs!)
+st.header("1. 📊 Get COT Signal")
+
+# Load COT button
+if st.button("📈 Load Latest COT Report", type="primary"):
+    try:
+        import glob
+        data_files = glob.glob("data/*COT*.csv")
+        
+        if data_files:
+            analyzer = COTAnalyzer(data_files)
+            st.session_state.latest_signal = analyzer.get_latest_signal()
+            st.success(f"✅ COT Signal Loaded")
+        else:
+            st.session_state.latest_signal = COTAnalyzer()._get_sample_signal()
+            st.info("📝 Using sample COT data")
+            
+    except Exception as e:
+        st.error(f"Error: {e}")
+
+# Display signal if available
+if st.session_state.latest_signal:
+    signal = st.session_state.latest_signal
     
+    # Show clear signal
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("COT Report Date", signal.get('report_date', 'N/A'))
+    
+    with col2:
+        net = signal.get('net_commercial', 0)
+        st.metric("Commercial Net", f"{net:,}", delta="Short" if net < 0 else "Long")
+    
+    with col3:
+        bias = signal.get('usdzar_bias', 'NEUTRAL')
+        if "BULLISH" in bias:
+            st.metric("USD/ZAR Signal", "🟢 BUY", delta="Strong" if signal.get('signal_strength') == 'STRONG' else "Moderate")
+        elif "BEARISH" in bias:
+            st.metric("USD/ZAR Signal", "🔴 SELL", delta="Strong" if signal.get('signal_strength') == 'STRONG' else "Moderate")
+        else:
+            st.metric("USD/ZAR Signal", "⚪ WAIT")
+    
+    # Simple explanation
+    if "BULLISH" in signal.get('usdzar_bias', ''):
+        st.info(f"**🎯 Trading Bias:** BUY USD/ZAR - Commercials are SHORT {abs(signal.get('net_commercial', 0)):,} Gold contracts")
+    elif "BEARISH" in signal.get('usdzar_bias', ''):
+        st.info(f"**🎯 Trading Bias:** SELL USD/ZAR - Commercials are LONG {signal.get('net_commercial', 0):,} Gold contracts")
+    else:
+        st.warning("**🎯 Trading Bias:** NEUTRAL - Wait for clearer signal")
+
+st.divider()
+
+# STEP 2: Market Levels
+st.header("2. 📈 Enter Today's Market Levels")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.subheader("Today's Range")
+    today_low = st.number_input(
+        "Today's Low (Support)",
+        min_value=10.0,
+        max_value=30.0,
+        value=17.0433,
+        step=0.0010,
+        format="%.4f",
+        help="From investing.com - Day's Range Low"
+    )
+    
+    today_high = st.number_input(
+        "Today's High (Resistance)", 
+        min_value=10.0,
+        max_value=30.0,
+        value=17.0590,
+        step=0.0010,
+        format="%.4f",
+        help="From investing.com - Day's Range High"
+    )
+
+with col2:
+    st.subheader("Account Settings")
     account_balance = st.number_input(
         "Account Balance ($)",
         min_value=50.0,
-        max_value=1000.0,
+        max_value=10000.0,
         value=100.0,
-        step=50.0,
-        help="Your trading account balance"
+        step=50.0
     )
     
     risk_percent = st.slider(
@@ -63,355 +137,192 @@ with st.sidebar:
         min_value=0.1,
         max_value=2.0,
         value=0.5,
-        step=0.1,
-        help="Risk 0.5% = $0.50 risk on $100 account"
-    )
-    
-    st.divider()
-    st.header("📈 Market Levels")
-    
-    # Today's range
-    col1, col2 = st.columns(2)
-    with col1:
-        support = st.number_input(
-            "Support (Buy Zone)",
-            min_value=10.0,
-            max_value=30.0,
-            value=17.0433,
-            step=0.0010,
-            format="%.4f",
-            help="Today's low from investing.com"
-        )
-    
-    with col2:
-        resistance = st.number_input(
-            "Resistance (Sell Zone)",
-            min_value=10.0,
-            max_value=30.0,
-            value=17.0590,
-            step=0.0010,
-            format="%.4f",
-            help="Today's high from investing.com"
-        )
-    
-    current_price = (support + resistance) / 2
-    
-    st.divider()
-    
-    # Generate button
-    generate = st.button(
-        "🚀 GENERATE LIMIT ORDERS",
-        type="primary",
-        use_container_width=True
+        step=0.1
     )
 
-# Main content
-tab1, tab2, tab3 = st.tabs(["🎯 Order Setup", "📱 Broker Guide", "📊 COT Signal"])
+st.divider()
 
-# TAB 1: Order Setup
-with tab1:
-    st.header("🎯 Limit Order Setup")
-    
-    if generate:
-        # Load COT signal
-        try:
-            data_files = []
-            for year in [2020, 2021, 2022, 2023, 2024, 2025]:
-                file_path = f"data/{year}_COT.csv"
-                if os.path.exists(file_path):
-                    data_files.append(file_path)
-            
-            if data_files:
-                analyzer = COTAnalyzer(data_files)
-                signal = analyzer.get_latest_signal()
-            else:
-                signal = analyzer.get_latest_signal()  # Use dummy
-        except:
-            signal = {'usdzar_bias': 'BULLISH USD/ZAR', 'signal_strength': 'STRONG'}
-        
-        # Generate orders based on signal
+# STEP 3: Generate Limit Order
+st.header("3. 🎯 Generate Limit Order")
+
+if st.button("✨ GENERATE LIMIT ORDER", type="primary", use_container_width=True):
+    if not st.session_state.latest_signal:
+        st.error("Please load COT data first!")
+    else:
+        signal = st.session_state.latest_signal
         bias = signal.get('usdzar_bias', '').upper()
         
+        # Calculate order details
         if "BULLISH" in bias:
             direction = "BUY"
             order_type = "BUY LIMIT"
-            entry_price = support + 0.0010
-            stop_loss = support - 0.0020
-            take_profit = entry_price + 0.0040
-            
-            # Explanation
-            reason = f"Commercials are SHORT {abs(signal.get('net_commercial', 59451)):,} Gold contracts"
+            entry_price = round(today_low + 0.0010, 4)  # Just above support
+            stop_loss = round(today_low - 0.0020, 4)    # 20 pips below
+            take_profit = round(entry_price + 0.0040, 4)  # 40 pips above (2:1)
+            explanation = f"Price needs to DROP to support at {today_low:.4f}"
             
         elif "BEARISH" in bias:
-            direction = "SELL"
+            direction = "SELL" 
             order_type = "SELL LIMIT"
-            entry_price = resistance - 0.0010
-            stop_loss = resistance + 0.0020
-            take_profit = entry_price - 0.0040
+            entry_price = round(today_high - 0.0010, 4)  # Just below resistance
+            stop_loss = round(today_high + 0.0020, 4)     # 20 pips above
+            take_profit = round(entry_price - 0.0040, 4)  # 40 pips below (2:1)
+            explanation = f"Price needs to RISE to resistance at {today_high:.4f}"
             
-            reason = f"Commercials are LONG {signal.get('net_commercial', 0):,} Gold contracts"
         else:
-            direction = "NEUTRAL"
-            order_type = "NO TRADE"
+            direction = "NONE"
+            order_type = "NO ORDER"
             entry_price = stop_loss = take_profit = 0
-            reason = "No clear COT signal"
+            explanation = "No clear signal - wait"
         
-        if direction != "NEUTRAL":
-            # Calculate risk
-            risk_pips = abs(entry_price - stop_loss) * 10000
-            reward_pips = abs(take_profit - entry_price) * 10000
+        if direction != "NONE":
+            # Risk calculation
             risk_amount = account_balance * (risk_percent / 100)
+            position_size = 0.01  # Fixed for small accounts
             
-            # Save plan
-            st.session_state.trade_plan = {
+            # Save to session
+            st.session_state.order_details = {
                 'direction': direction,
                 'order_type': order_type,
-                'entry': round(entry_price, 4),
-                'stop_loss': round(stop_loss, 4),
-                'take_profit': round(take_profit, 4),
-                'risk_pips': int(risk_pips),
-                'reward_pips': int(reward_pips),
+                'entry_price': entry_price,
+                'stop_loss': stop_loss,
+                'take_profit': take_profit,
                 'risk_amount': round(risk_amount, 2),
-                'position_size': 0.01,
-                'reason': reason,
-                'signal_strength': signal.get('signal_strength', 'STRONG'),
-                'valid_until': (datetime.now() + timedelta(days=1)).strftime("%b %d, %Y 9:00 AM")
+                'position_size': position_size,
+                'explanation': explanation
             }
-    
-    # Display order plan
-    if st.session_state.trade_plan:
-        tp = st.session_state.trade_plan
-        
-        st.success(f"### 🎯 {tp['direction']} SIGNAL DETECTED")
-        st.write(f"**Reason:** {tp['reason']}")
-        st.write(f"**Signal Strength:** {tp['signal_strength']}")
-        
-        # Order details
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Order Type", tp['order_type'])
-            st.metric("Entry Price", f"{tp['entry']:.4f}")
-        
-        with col2:
-            st.metric("Stop Loss", f"{tp['stop_loss']:.4f}")
-            st.metric("Take Profit", f"{tp['take_profit']:.4f}")
-        
-        with col3:
-            st.metric("Risk/Reward", f"{tp['risk_pips']}/{tp['reward_pips']} pips")
-            st.metric("Risk Amount", f"${tp['risk_amount']:.2f}")
-        
-        # Order ticket
-        st.divider()
-        st.subheader("📝 Order Ticket")
-        
-        order_ticket = f"""
-        **{tp['order_type']} ORDER**
-        Symbol: USD/ZAR
-        Volume: {tp['position_size']} lots
-        Price: {tp['entry']:.4f}
-        Stop Loss: {tp['stop_loss']:.4f}
-        Take Profit: {tp['take_profit']:.4f}
-        Expiry: {tp['valid_until']}
-        """
-        
-        st.code(order_ticket, language="text")
-        
-        # Action buttons
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("✅ MARK AS SET", type="primary", use_container_width=True):
-                st.session_state.orders_set = True
-                st.rerun()
-        
-        with col2:
-            if st.button("🔄 NEW SIGNAL", use_container_width=True):
-                st.session_state.trade_plan = None
-                st.session_state.orders_set = False
-                st.rerun()
-        
-        # Status
-        if st.session_state.orders_set:
-            st.balloons()
-            st.success("""
-            ✅ **ORDERS SET SUCCESSFULLY!**
             
-            **Now go live your life:**
-            1. Orders will execute automatically
-            2. Check back tomorrow morning
-            3. If filled, manage trade
-            4. If not filled, check for new signal
-            """)
-    
-    else:
-        st.info("Click 'GENERATE LIMIT ORDERS' to get your trading orders")
-
-# TAB 2: Broker Guide
-with tab2:
-    st.header("📱 How to Set Orders")
-    
-    if st.session_state.trade_plan:
-        tp = st.session_state.trade_plan
-        
-        # Select broker
-        broker = st.selectbox(
-            "Select Your Broker",
-            ["Exness", "XM", "FBS", "OctaFX", "HotForex"]
-        )
-        
-        st.subheader(f"Step-by-Step for {broker}")
-        
-        if broker == "Exness":
-            steps = """
-            1. **Open Exness app** on your phone
-            2. **Go to USD/ZAR** chart
-            3. Tap **"Trade"** button
-            4. Select **"Pending Order"**
-            5. Choose **"{order_type}"**
-            6. Set **Price: {entry:.4f}**
-            7. Set **Stop Loss: {stop_loss:.4f}**
-            8. Set **Take Profit: {take_profit:.4f}**
-            9. Set **Volume: 0.01** lots
-            10. Tap **"Place Order"**
-            11. **CONFIRM** the order
-            """.format(
-                order_type=tp['order_type'],
-                entry=tp['entry'],
-                stop_loss=tp['stop_loss'],
-                take_profit=tp['take_profit']
-            )
-        
-        elif broker == "XM":
-            steps = """
-            1. **Open XM app**
-            2. Go to **USD/ZAR**
-            3. Tap **"+"** or **"New Order"**
-            4. Select **"Pending Order"**
-            5. Choose **"{order_type}"**
-            6. Set **Entry: {entry:.4f}**
-            7. Set **S/L: {stop_loss:.4f}**
-            8. Set **T/P: {take_profit:.4f}**
-            9. Set **Lots: 0.01**
-            10. Tap **"Place Order"**
-            """.format(
-                order_type=tp['order_type'],
-                entry=tp['entry'],
-                stop_loss=tp['stop_loss'],
-                take_profit=tp['take_profit']
-            )
-        
-        else:
-            steps = f"""
-            1. Open your {broker} app
-            2. Find USD/ZAR
-            3. Create Pending Order
-            4. Select {tp['order_type']}
-            5. Price: {tp['entry']:.4f}
-            6. Stop Loss: {tp['stop_loss']:.4f}
-            7. Take Profit: {tp['take_profit']:.4f}
-            8. Volume: 0.01 lots
-            9. Place Order
-            """
-        
-        st.info(steps)
-        
-        # Visual guide
-        with st.expander("📸 Visual Guide (What to look for)"):
-            st.image("https://via.placeholder.com/400x250/4CAF50/FFFFFF?text=BUY+LIMIT+Example", 
-                    caption="Example: BUY LIMIT order setup")
-            st.write("""
-            **Key terms in your broker:**
-            - **Pending Order**: Order that waits for price
-            - **Buy Limit**: Buy BELOW current price
-            - **Sell Limit**: Sell ABOVE current price  
-            - **S/L**: Stop Loss
-            - **T/P**: Take Profit
-            - **Volume**: Lot size (use 0.01)
-            """)
-    
-    else:
-        st.info("Generate orders first in the Order Setup tab")
-
-# TAB 3: COT Signal
-with tab3:
-    st.header("📊 COT Signal Analysis")
-    
-    # Simple signal display
-    st.info("""
-    ### How COT Signals Work:
-    
-    **Commercial Traders (Smart Money)** positions in Gold:
-    - **SHORT Commercials** = BEARISH Gold = BULLISH USD/ZAR
-    - **LONG Commercials** = BULLISH Gold = BEARISH USD/ZAR
-    
-    **Thresholds:**
-    - > +50,000: STRONG BULLISH Gold
-    - < -50,000: STRONG BEARISH Gold
-    - Between: Moderate signal
-    """)
-    
-    # Load and show current signal
-    if st.button("🔄 Refresh COT Data"):
-        try:
-            data_files = []
-            for year in [2020, 2021, 2022, 2023, 2024, 2025]:
-                file_path = f"data/{year}_COT.csv"
-                if os.path.exists(file_path):
-                    data_files.append(file_path)
+            # Display order
+            st.success("✅ LIMIT ORDER GENERATED!")
             
-            if data_files:
-                analyzer = COTAnalyzer(data_files)
-                signal = analyzer.get_latest_signal()
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader("📊 Order Details")
+                st.metric("Order Type", order_type)
+                st.metric("Entry Price", f"{entry_price:.4f}")
+                st.metric("Stop Loss", f"{stop_loss:.4f}")
+                st.metric("Take Profit", f"{take_profit:.4f}")
+            
+            with col2:
+                st.subheader("💰 Risk Management")
+                st.metric("Risk/Reward", "2:1")
+                st.metric("Risk Amount", f"${risk_amount:.2f}")
+                st.metric("Position Size", f"{position_size} lots")
+                st.metric("Pips Risk", "20")
+                st.metric("Pips Reward", "40")
+            
+            # Broker instructions
+            st.divider()
+            st.header("4. 📱 How to Set This Order")
+            
+            # Platform selector
+            platform = st.selectbox(
+                "Select Your Broker Platform:",
+                ["Exness", "XM", "FBS", "OctaFX", "HotForex", "Other"]
+            )
+            
+            # Platform-specific instructions
+            if platform == "Exness":
+                instructions = f"""
+                1. **Open Exness app** → USD/ZAR chart
+                2. **Tap "New Order"** (usually + icon)
+                3. **Select "Pending Order"**
+                4. **Choose "{order_type}"**
+                5. **Set Price:** {entry_price:.4f}
+                6. **Set Stop Loss:** {stop_loss:.4f}
+                7. **Set Take Profit:** {take_profit:.4f}
+                8. **Set Volume:** 0.01
+                9. **Expiry:** Tomorrow 9AM
+                10. **Tap "Place Order"**
                 
-                st.subheader("📈 Latest COT Report")
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.metric("Report Date", signal.get('report_date', 'N/A'))
-                    st.metric("Net Commercial", f"{signal.get('net_commercial', 0):,}")
-                
-                with col2:
-                    bias = signal.get('usdzar_bias', 'NEUTRAL')
-                    color = "green" if "BULLISH" in bias else "red" if "BEARISH" in bias else "gray"
-                    st.markdown(f"**USD/ZAR Bias:** :{color}[{bias}]")
-                    st.metric("Signal Strength", signal.get('signal_strength', 'UNKNOWN'))
-                
-                # Interpretation
-                net = signal.get('net_commercial', 0)
-                if net < -50000:
-                    st.success("""
-                    🟢 **STRONG BUY USD/ZAR SIGNAL**
-                    
-                    Commercials are heavily SHORT Gold.
-                    Look for BUY LIMIT orders at support.
-                    """)
-                elif net > 50000:
-                    st.error("""
-                    🔴 **STRONG SELL USD/ZAR SIGNAL**
-                    
-                    Commercials are heavily LONG Gold.
-                    Look for SELL LIMIT orders at resistance.
-                    """)
-                else:
-                    st.warning("""
-                    🟡 **MODERATE OR NO SIGNAL**
-                    
-                    Commercial position not extreme.
-                    Consider waiting for clearer signal.
-                    """)
+                💡 **Pro Tip:** Set order, then close app. Check back in 6 hours.
+                """
+            elif platform == "XM":
+                instructions = f"""
+                1. **Open XM app** → USD/ZAR
+                2. **Tap "Trade"** (bottom middle)
+                3. **Tap "Pending Order"** (top right)
+                4. **Select "{order_type}"**
+                5. **Price:** {entry_price:.4f}
+                6. **Stop Loss:** {stop_loss:.4f}
+                7. **Take Profit:** {take_profit:.4f}
+                8. **Lots:** 0.01
+                9. **Expiry:** GTC (Good Till Cancelled)
+                10. **Confirm Order**
+                """
             else:
-                st.warning("No COT files found in data folder")
+                instructions = f"""
+                1. Open your {platform} trading platform
+                2. Go to USD/ZAR chart
+                3. Look for "Pending Orders" or "Limit Orders"
+                4. Select **{order_type}**
+                5. Set price to **{entry_price:.4f}**
+                6. Set stop loss to **{stop_loss:.4f}**
+                7. Set take profit to **{take_profit:.4f}**
+                8. Set volume to **0.01 lots**
+                9. Place order
+                10. Close platform and check later
+                """
+            
+            st.info(instructions)
+            
+            # Market context
+            st.divider()
+            st.header("5. 📊 Market Context")
+            
+            current_mid = (today_high + today_low) / 2
+            st.write(f"**Current Market Situation:**")
+            st.write(f"- Today's Range: {today_low:.4f} to {today_high:.4f}")
+            st.write(f"- Your Entry: {entry_price:.4f}")
+            st.write(f"- **{explanation}**")
+            
+            # Probability estimate
+            st.divider()
+            st.header("6. 🎲 Probability & Expectations")
+            
+            if direction == "BUY":
+                st.write("""
+                **What to Expect:**
+                - ✅ **GOOD:** Price drops to support, order fills, hits target
+                - ⚠️ **OK:** Price drops but not enough, order doesn't fill (no loss)
+                - ❌ **BAD:** Price drops sharply, fills then hits stop loss (lose $0.50)
                 
-        except Exception as e:
-            st.error(f"Error loading COT data: {e}")
+                **Probability:** 40-60% fill rate (depends on market volatility)
+                **Best Time:** London/NY overlap (2PM-6PM Nigeria time)
+                """)
+            else:
+                st.write("""
+                **What to Expect:**
+                - ✅ **GOOD:** Price rises to resistance, order fills, hits target
+                - ⚠️ **OK:** Price rises but not enough, order doesn't fill (no loss)
+                - ❌ **BAD:** Price spikes then reverses, hits stop loss (lose $0.50)
+                
+                **Probability:** 40-60% fill rate
+                **Best Time:** London/NY overlap
+                """)
+            
+            # Golden rules
+            st.divider()
+            st.header("7. ⭐ Golden Rules for $150 Accounts")
+            
+            st.markdown("""
+            1. **ONLY 0.01 lots** until account > $300
+            2. **ONLY 1 pending order at a time**
+            3. **NEVER move stop loss** once set
+            4. **ALWAYS set take profit** (greed loses accounts)
+            5. **If order doesn't fill in 24 hours, CANCEL it**
+            6. **Missing trades costs $0, bad trades cost money**
+            7. **Patience beats rushing** - Wait for price to come to you
+            8. **Weekends:** Cancel all pending orders Friday evening
+            """)
+            
+        else:
+            st.warning("No clear trading signal from COT data. Wait for next COT report.")
 
 # Footer
 st.divider()
 st.caption("""
-**$150 Strategy Rules:**
-1. Only 0.01 lots until $300
-2. Only 1 pending order at a time
-3. Orders valid for 24 hours max
-4. Cancel unfilled orders next morning
-5. Always use Stop Loss & Take Profit
+**Strategy:** COT-based limit orders | **Risk:** 0.5% per trade | **Lots:** 0.01 fixed | **Pairs:** USD/ZAR only
+**Remember:** This is a SET & FORGET system. Place order, close app, live your life.
 """)
