@@ -9,7 +9,7 @@ class COTAnalyzer:
         self.merged_data = None
         
     def load_all_cot_data(self):
-        """Load ALL COT CSV files (2020-2025)"""
+        """Load ALL COT CSV files (2020-2025) with proper encoding"""
         data_files = []
         for year in range(2020, 2026):  # 2020 to 2025
             file_path = f"data/{year}_COT.csv"
@@ -19,7 +19,11 @@ class COTAnalyzer:
         dfs = []
         for path in data_files:
             try:
-                df = pd.read_csv(path)
+                # Try different encodings for COT files
+                try:
+                    df = pd.read_csv(path, encoding='utf-8-sig')
+                except:
+                    df = pd.read_csv(path, encoding='latin-1')
                 
                 # Filter for REGULAR GOLD only
                 if 'Market_and_Exchange_Names' in df.columns:
